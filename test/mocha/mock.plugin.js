@@ -26,8 +26,9 @@ module.exports = {
     storage: {
       operations: {
         // NOTE: do not use arrow functions here because this function is to be
-        // bound to the class instance
-        query: function({maxBlockHeight, query}, callback) {
+        // bound to the class instance. Methods should be properly namespaced
+        // to avoid conflicts.
+        mockQuery: async function({maxBlockHeight, query}) {
           const {
             eventCollection, collection: operationCollection,
             util: {assert, dbHash, BedrockError}
@@ -58,37 +59,45 @@ module.exports = {
                 {$eq: [`$operation.record.${k}`, query[k]]});
             }
           });
-          eventCollection.aggregate([
-            {$match: eventQuery},
-            {$project: {_id: 0, eventHash: 1}},
-            {$group: {
-              _id: null,
-              eventHashes: {$addToSet: '$eventHash'}
-            }},
-            {$lookup: {
-              from: operationCollection.s.name,
-              let: {eventHashes: '$eventHashes'},
-              pipeline: [
-                {$match: {$expr: operationMatch}},
-                {$project: {_id: 0, 'operation.record.id': 1}},
-                {$group: {_id: null, records: {
-                  $addToSet: '$operation.record.id'
-                }}},
-                {$project: {_id: 0}},
-              ],
-              as: 'records',
-            }},
-            {$project: {records: {$arrayElemAt: ['$records', 0]}}},
-            {$replaceRoot: {newRoot: '$records'}}
-          ]).toArray((err, result) => {
-            if(err && err.code === 40228) {
-              return callback(new BedrockError('Not Found.', 'NotFoundError'));
+          let result;
+          try {
+            result = await eventCollection.aggregate([
+              {$match: eventQuery},
+              {$project: {_id: 0, eventHash: 1}},
+              {$group: {
+                _id: null,
+                eventHashes: {$addToSet: '$eventHash'}
+              }},
+              {$lookup: {
+                from: operationCollection.s.name,
+                let: {eventHashes: '$eventHashes'},
+                pipeline: [
+                  {$match: {$expr: operationMatch}},
+                  {$project: {_id: 0, 'operation.record.id': 1}},
+                  {$group: {_id: null, records: {
+                    $addToSet: '$operation.record.id'
+                  }}},
+                  {$project: {_id: 0}},
+                ],
+                as: 'records',
+              }},
+              {$project: {records: {$arrayElemAt: ['$records', 0]}}},
+              {$replaceRoot: {newRoot: '$records'}}
+            ]).toArray();
+          } catch(err) {
+            if(err.code === 40228) {
+              throw new BedrockError(
+                'Not Found.', 'NotFoundError',
+                {httpStatusCode: 404, public: true});
             }
-            if(err) {
-              return callback(err);
-            }
-            callback(null, result[0]);
-          });
+            throw err;
+          }
+          if(result.length === 0) {
+            throw new BedrockError(
+              'Not Found.', 'NotFoundError',
+              {httpStatusCode: 404, public: true});
+          }
+          return result[0];
         }
       }
     }

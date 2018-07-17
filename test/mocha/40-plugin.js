@@ -6,6 +6,7 @@
 const async = require('async');
 const bedrock = require('bedrock');
 const blsMongodb = require('bedrock-ledger-storage-mongodb');
+const {callbackify} = require('util');
 const helpers = require('./helpers');
 const mockData = require('./mock.data');
 const mockPlugin = require('./mock.plugin');
@@ -33,7 +34,7 @@ describe('Storage Plugin API', () => {
       async.auto({
         storage: callback => blsMongodb.add(meta, options, callback),
         test: ['storage', (results, callback) => {
-          should.exist(results.storage.operations.query);
+          should.exist(results.storage.operations.mockQuery);
           callback();
         }]
       }, err => {
@@ -54,7 +55,7 @@ describe('Storage Plugin API', () => {
           blsMongodb.get(id, {}, callback);
         }],
         test: ['get', (results, callback) => {
-          should.exist(results.get.operations.query);
+          should.exist(results.get.operations.mockQuery);
           callback();
         }]
       }, err => {
@@ -153,7 +154,9 @@ describe('Storage Plugin API', () => {
             results.concerts[eventHashes[0]].operations[0].operation.record.id,
             results.concerts[eventHashes[1]].operations[0].operation.record.id,
           ];
-          ledgerStorage.operations.query({
+          // the mockQuery API has been implemented using async/await
+          const mockQuery = callbackify(ledgerStorage.operations.mockQuery);
+          mockQuery({
             maxBlockHeight: 100,
             query: {
               type: 'Offer',
@@ -197,8 +200,10 @@ describe('Storage Plugin API', () => {
           }, callback);
         }],
         query: ['offers', (results, callback) => {
+          // the mockQuery API has been implemented using async/await
+          const mockQuery = callbackify(ledgerStorage.operations.mockQuery);
           // NOTE: querying for an unknown type
-          ledgerStorage.operations.query({
+          mockQuery({
             maxBlockHeight: 100,
             query: {
               type: 'UnknownType',
